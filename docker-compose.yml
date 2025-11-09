@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  cloud-api:
+    build: ./cloud
+    container_name: cloud-api
+    ports:
+      - "8001:8000"                # accesezi API-ul la http://localhost:8001
+    environment:
+      - DB_PATH=sqlite:///data.db
+    volumes:
+      - cloud_data:/app
+
+  edge-node:
+    build: ./edge
+    container_name: edge-node
+    depends_on:
+      - mosquitto
+      - cloud-api
+    environment:
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+      - CLOUD_INGEST_URL=http://cloud-api:8000/ingest
+      - AGG_WINDOW_SEC=5
+      - ALERT_TEMP_MAX=8.0
+    ports:
+      - "8081:8080"                # health la http://localhost:8081/health
+
+  dashboard:
+    build: ./dashboard
+    container_name: sc-dashboard
+    depends_on:
+      - cloud-api
+    environment:
+      - CLOUD_URL=http://cloud-api:8000   # sau http://localhost:8001 dacă rulezi local în afara rețelei docker
+      - DASH_REFRESH_MS=5000              # refresh UI (ms)
+      - DASH_RECENT_SEC=120               # ce considerăm „recent”
+    ports:
+      - "8501:8501"                # UI la http://localhost:8501
+    volumes:
+      - ./dashboard/app.py:/app/app.py:ro
+      - ./dashboard/requirements.txt:/app/requirements.txt:ro
+
+volumes:
+  cloud_data:
